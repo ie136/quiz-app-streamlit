@@ -36,7 +36,6 @@ def load_data():
     df_ltcs = pd.read_csv("question_LTCS.csv")
     return df_ltc, df_ltcs
 
-
 df_ltc, df_ltcs = load_data()
 
 # -----------------------
@@ -92,18 +91,27 @@ st.write(f"### 🎯 Chế độ: {mode}")
 
 for idx, row in questions.iterrows():
     st.markdown(f"<div class='question-box'>**Câu {idx+1}: {row['question']}**</div>", unsafe_allow_html=True)
-    options = ["A", "B", "C", "D"]
-    valid_opts = [opt for opt in options if str(row[opt]).strip() != "nan"]
+    
+    # Tạo danh sách đáp án có nội dung
+    options = []
+    labels = []
+    for opt in ["A", "B", "C", "D"]:
+        value = str(row.get(opt, "")).strip()
+        if value and value.lower() != "nan":
+            options.append(opt)
+            labels.append(f"{opt}. {value}")
 
-    choice = st.radio(
+    # Hiển thị radio với nội dung thật
+    choice_label = st.radio(
         f"Chọn đáp án cho câu {idx+1}",
-        valid_opts,
+        labels,
         key=f"q_{idx}",
         index=None,
-        horizontal=True
+        horizontal=False
     )
 
-    if choice:
+    if choice_label:
+        choice = choice_label.split(".")[0]
         st.session_state.answers[idx] = choice
         if show_answer or st.session_state.submitted:
             correct_ans = row["correct_answer"]
@@ -144,4 +152,3 @@ if mode in ["Luyện tập", "Thi thử"]:
         # Lưu log
         with open("log_streamlit.txt", "a", encoding="utf-8") as f:
             f.write(f"{mode} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {correct}/{total}\n")
-
