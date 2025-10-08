@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import random
-import time
-from datetime import datetime, timedelta
 
 # ================== SETTINGS ==================
 st.set_page_config(page_title="Quiz App", layout="centered")
@@ -12,8 +10,6 @@ FILES = {
     "LTC_TWR": "question_LTC_TWR.csv",
     "LTCS": "question_LTCS.csv",
 }
-
-TIMER_MINUTES = 45  # 45 phút
 
 # ================== UI HEADER ==================
 st.title("🧠 LUYỆN TRẮC NGHIỆM ONLINE")
@@ -48,26 +44,6 @@ with col1:
 with col2:
     mode = st.selectbox("Chế độ", ["Tất cả câu hỏi", "Luyện tập", "Thi thử"])
 
-# ================== TIMER FUNCTION ==================
-def start_timer():
-    if "start_time" not in st.session_state:
-        st.session_state["start_time"] = datetime.now()
-        st.session_state["end_time"] = st.session_state["start_time"] + timedelta(minutes=TIMER_MINUTES)
-    return st.session_state["end_time"]
-
-def get_remaining_time():
-    if "end_time" not in st.session_state:
-        return None
-    remaining = st.session_state["end_time"] - datetime.now()
-    return max(remaining, timedelta(seconds=0))
-
-def auto_submit_if_time_over():
-    if get_remaining_time().total_seconds() <= 0 and not st.session_state.get("submitted", False):
-        st.warning("⏰ Hết thời gian làm bài! Hệ thống sẽ tự động nộp bài.")
-        st.session_state["auto_submit"] = True
-        return True
-    return False
-
 # ================== CREATE QUIZ ==================
 if st.button("🎲 Tạo đề mới"):
     random_seed = random.randint(1, 999999)
@@ -76,6 +52,7 @@ if st.button("🎲 Tạo đề mới"):
     df_ltc_app = pd.read_csv(FILES["LTC_APP"])
     df_ltc_twr = pd.read_csv(FILES["LTC_TWR"])
     df_ltc_all = pd.concat([df_ltc_app, df_ltc_twr], ignore_index=True)
+
     df_ltcs = pd.read_csv(FILES["LTCS"])
 
     if mode == "Tất cả câu hỏi":
@@ -88,22 +65,10 @@ if st.button("🎲 Tạo đề mới"):
     df_final.reset_index(drop=True, inplace=True)
     st.session_state["questions"] = df_final
     st.session_state["answers"] = {}
-    st.session_state["submitted"] = False
-    st.session_state["auto_submit"] = False
-    if mode in ["Luyện tập", "Thi thử"]:
-        start_timer()
-
-# ================== TIMER DISPLAY ==================
-if mode in ["Luyện tập", "Thi thử"] and "end_time" in st.session_state and not st.session_state.get("submitted", False):
-    remaining = get_remaining_time()
-    mins, secs = divmod(int(remaining.total_seconds()), 60)
-    st.markdown(f"### ⏰ Thời gian còn lại: **{mins:02d}:{secs:02d}**")
-    auto_submit_if_time_over()
-    time.sleep(1)
-    st.experimental_rerun()
+    st.session_state["submitted"] = False  # Reset trạng thái
 
 # ================== DISPLAY QUESTIONS ==================
-if "questions" in st.session_state and not st.session_state.get("submitted", False):
+if "questions" in st.session_state:
     st.divider()
     st.subheader(f"📋 {len(st.session_state['questions'])} câu hỏi")
 
@@ -116,6 +81,7 @@ if "questions" in st.session_state and not st.session_state.get("submitted", Fal
         if answer:
             st.session_state["answers"][i] = answer[0]
 
+        # Hiển thị kết quả khi không ở "Thi thử"
         if mode != "Thi thử" and answer:
             if answer[0] == row["correct_answer"]:
                 st.success("✅ Chính xác!")
@@ -123,36 +89,34 @@ if "questions" in st.session_state and not st.session_state.get("submitted", Fal
                 st.error(f"❌ Sai! Đáp án đúng là {row['correct_answer']}")
         st.markdown("---")
 
+    # ================== SUBMIT ==================
     if st.button("📤 Nộp bài"):
+        correct = 0
+        total = len(st.session_state["questions"])
+        wrong_answers = []
+
+        for i, row in st.session_state["questions"].iterrows():
+            chosen = st.session_state["answers"].get(i)
+            if chosen == row["correct_answer"]:
+                correct += 1
+            else:
+                wrong_answers.append({
+                    "index": i,
+                    "Câu": i + 1,
+                    "Câu hỏi": row["question"],
+                    "Đáp án của bạn": chosen if chosen else "Không chọn",
+                    "Đáp án đúng": row["correct_answer"]
+                })
+
+        percent = round(correct / total * 100, 2)
         st.session_state["submitted"] = True
-        st.session_state["auto_submit"] = False
-        st.experimental_rerun()
+        st.session_state["wrong_answers"] = wrong_answers
+        st.session_state["score"] = (correct, total, percent)
 
-# ================== SUBMIT / AUTO-SUBMIT ==================
-if st.session_state.get("submitted", False) or st.session_state.get("auto_submit", False):
-    correct = 0
-    total = len(st.session_state["questions"])
-    wrong_answers = []
-
-    for i, row in st.session_state["questions"].iterrows():
-        chosen = st.session_state["answers"].get(i)
-        if chosen == row["correct_answer"]:
-            correct += 1
-        else:
-            wrong_answers.append({
-                "index": i,
-                "Câu": i + 1,
-                "Câu hỏi": row["question"],
-                "Đáp án của bạn": chosen if chosen else "Không chọn",
-                "Đáp án đúng": row["correct_answer"]
-            })
-
-    percent = round(correct / total * 100, 2)
-    st.session_state["score"] = (correct, total, percent)
-    st.session_state["wrong_answers"] = wrong_answers
-    st.session_state["submitted"] = True
-
+# ================== SHOW RESULT ==================
+if st.session_state.get("submitted", False):
     correct, total, percent = st.session_state["score"]
+
     st.markdown("## 🎯 Kết quả")
     st.info(f"**{correct}/{total} câu đúng ({percent}%)**")
     if correct >= 35:
@@ -160,24 +124,40 @@ if st.session_state.get("submitted", False) or st.session_state.get("auto_submit
     else:
         st.error("❌ CHƯA ĐẠT")
 
+    wrong_answers = st.session_state["wrong_answers"]
+
+    # Chỉ hiện chi tiết khi ở Thi thử
     if mode == "Thi thử":
         st.markdown("---")
         st.markdown("### 🧩 Xem lại bài làm")
+
         show_only_wrong = st.checkbox("🔍 Chỉ hiển thị các câu sai", value=True)
 
         for i, row in st.session_state["questions"].iterrows():
             chosen = st.session_state["answers"].get(i)
             correct_ans = row["correct_answer"]
+
             is_wrong = (chosen != correct_ans)
             if show_only_wrong and not is_wrong:
                 continue
-            border_color = "#ff4d4d" if is_wrong else "#2ecc71"
+
+            # Màu highlight
+            box_color = "#2b2b3c"
+            if is_wrong:
+                border_color = "#ff4d4d"
+            else:
+                border_color = "#2ecc71"
+
+            chosen_text = chosen if chosen else "Không chọn"
             st.markdown(
                 f"""
-                <div style='background-color:#2b2b3c; border:2px solid {border_color};
-                            border-radius:8px; padding:10px; margin-bottom:10px;'>
+                <div style='background-color:{box_color};
+                            border:2px solid {border_color};
+                            border-radius:8px;
+                            padding:10px;
+                            margin-bottom:10px;'>
                     <b>Câu {i+1}:</b> {row['question']}<br>
-                    <span style='color:#66ccff;'>Bạn chọn: {chosen if chosen else "Không chọn"}</span><br>
+                    <span style='color:#66ccff;'>Bạn chọn: {chosen_text}</span><br>
                     <span style='color:#66ff99;'>Đáp án đúng: {correct_ans}</span>
                 </div>
                 """,
